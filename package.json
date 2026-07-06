@@ -1,0 +1,12 @@
+{
+  "name": "n8n-app",
+  "version": "1.0.0",
+  "description": "N8n workflow management, validation, and deployment tests",
+  "scripts": {
+    "test": "jest",
+    "test:coverage": "jest --coverage"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0"
+  }
+}
