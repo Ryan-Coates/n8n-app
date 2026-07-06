@@ -29,6 +29,20 @@
       "ci": ".github/workflows/pr-tests.yml",
       "tests": "tests/",
       "maintainer": "Ryan-Coates"
+    },
+    {
+      "id": "workflow-report",
+      "name": "Workflow Report - Sales Report Generator",
+      "description": "Receives transaction records via HTTP POST, groups by category, returns a ranked revenue report with totals, averages, and percentages.",
+      "file": "workflows/workflow-report.json",
+      "source_repo": "https://github.com/Ryan-Coates/workflow-report",
+      "webhook_path": "/webhook/sales-report",
+      "method": "POST",
+      "language": "Node.js",
+      "tags": ["reporting", "aggregation", "sales", "webhook"],
+      "ci": ".github/workflows/pr-tests.yml",
+      "tests": "tests/",
+      "maintainer": "Ryan-Coates"
     }
   ]
 }
