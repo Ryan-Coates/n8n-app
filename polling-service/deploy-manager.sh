@@ -59,9 +59,16 @@ validate_workflows() {
 restart_n8n() {
   log "Restarting N8n ..."
   if command -v docker &>/dev/null; then
-    docker compose -f "${REPO_DIR}/docker-compose.yml" restart n8n \
-      && log "N8n restarted successfully." \
-      || log "WARNING: N8n restart failed — check Docker logs."
+    # Locate the n8n container by name pattern (works without compose plugin)
+    local container
+    container=$(docker ps -qf "name=n8n-app-n8n" 2>/dev/null | head -1)
+    if [[ -n "$container" ]]; then
+      docker restart "$container" \
+        && log "N8n restarted successfully (container: $container)." \
+        || log "WARNING: N8n restart failed — check Docker logs."
+    else
+      log "WARNING: Could not find running n8n container to restart."
+    fi
   else
     log "WARNING: docker CLI not available; skipping restart."
   fi
