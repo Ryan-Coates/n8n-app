@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "httpMethod": "POST",
+        "httpMethod": "GET",
         "path": "sales-report",
         "responseMode": "responseNode",
         "options": {}
@@ -12,19 +12,21 @@
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [240, 300]
+      "position": [240, 300],
+      "disabled": false
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ status: 'received', record_count: $json.body.records?.length ?? 0 }) }}",
+        "responseBody": "={{ JSON.stringify({ status: 'ok', message: 'Report generated' }) }}",
         "options": {}
       },
       "id": "respond-node-report",
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [460, 300]
+      "position": [460, 300],
+      "disabled": false
     }
   ],
   "connections": {
@@ -40,6 +42,13 @@
       ]
     }
   },
+  "triggers": [
+    {
+      "type": "n8n-nodes-base.webhook",
+      "id": "webhook-node-report",
+      "disabled": false
+    }
+  ],
   "active": true,
   "settings": {},
   "id": "workflow-report"

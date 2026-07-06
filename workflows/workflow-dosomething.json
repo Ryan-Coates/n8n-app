@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "httpMethod": "POST",
+        "httpMethod": "GET",
         "path": "dosomething",
         "responseMode": "responseNode",
         "options": {}
@@ -12,7 +12,8 @@
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [240, 300]
+      "position": [240, 300],
+      "disabled": false
     },
     {
       "parameters": {
@@ -24,7 +25,8 @@
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [460, 300]
+      "position": [460, 300],
+      "disabled": false
     }
   ],
   "connections": {
@@ -32,6 +34,13 @@
       "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
     }
   },
+  "triggers": [
+    {
+      "type": "n8n-nodes-base.webhook",
+      "id": "webhook-node-dosomething",
+      "disabled": false
+    }
+  ],
   "active": true,
   "settings": {},
   "id": "workflow-dosomething"

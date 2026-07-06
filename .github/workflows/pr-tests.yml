@@ -87,9 +87,23 @@ jobs:
         run: |
           echo "Importing workflows..."
           for f in workflows/*.json; do
+            case "$f" in *catalog*) continue ;; esac
             echo "  Importing: $f"
             docker exec $(docker compose ps -q n8n) n8n import:workflow --input="/workflows/$(basename $f)" \
               && echo "    OK: $f" || echo "    WARN: import failed for $f (may already exist)"
+          done
+
+      - name: Publish workflows in N8n so webhooks register
+        run: |
+          echo "Publishing workflows..."
+          for f in workflows/*.json; do
+            case "$f" in *catalog*) continue ;; esac
+            wf_id=$(grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' "$f" | tail -1 | sed 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+            if [ -n "$wf_id" ]; then
+              echo "  Publishing: $wf_id"
+              docker exec $(docker compose ps -q n8n) n8n publish:workflow --id="$wf_id" \
+                && echo "    OK: $wf_id" || echo "    WARN: publish failed for $wf_id"
+            fi
           done
 
       - name: Restart N8n so webhooks are registered
