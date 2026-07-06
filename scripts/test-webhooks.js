@@ -28,19 +28,17 @@ const CATALOG    = JSON.parse(
 );
 
 /**
- * POST a JSON body to a webhook path and resolve with { status, body }.
+ * GET a webhook path and resolve with { status, body }.
  */
-function postWebhook(webhookPath) {
+function getWebhook(webhookPath) {
   return new Promise((resolve, reject) => {
-    const bodyStr = JSON.stringify({ test: true, source: 'ci-smoke-test' });
     const options = {
       hostname : N8N_HOST,
       port     : N8N_PORT,
       path     : webhookPath,
-      method   : 'POST',
+      method   : 'GET',
       headers  : {
         'Content-Type'   : 'application/json',
-        'Content-Length' : Buffer.byteLength(bodyStr),
       },
     };
 
@@ -54,7 +52,6 @@ function postWebhook(webhookPath) {
     req.setTimeout(10_000, () => {
       req.destroy(new Error(`Timeout after 10s on ${webhookPath}`));
     });
-    req.write(bodyStr);
     req.end();
   });
 }
@@ -70,7 +67,7 @@ async function main() {
   for (const wf of workflows) {
     const url = `http://${N8N_HOST}:${N8N_PORT}${wf.webhook_path}`;
     try {
-      const { status, body } = await postWebhook(wf.webhook_path);
+      const { status, body } = await getWebhook(wf.webhook_path);
 
       if (status === 200) {
         console.log(`  ✓ ${wf.id.padEnd(28)} ${wf.webhook_path}  →  HTTP ${status}`);
