@@ -11,11 +11,12 @@ GITHUB_TOKEN="${GITHUB_TOKEN:?GITHUB_TOKEN env var is required}"
 GITHUB_OWNER="${GITHUB_OWNER:-Ryan-Coates}"
 GITHUB_REPO="${GITHUB_REPO:-n8n-app}"
 N8N_URL="${N8N_URL:-http://n8n:5678}"
-POLL_INTERVAL="${POLL_INTERVAL:-300}"
+POLL_INTERVAL="${POLL_INTERVAL:-60}"
 STATE_FILE="/var/log/last_known_sha"
 LOG_FILE="/var/log/deploy-manager.log"
-# Use a writable clone dir inside the container volume, not the bind-mount
 CLONE_DIR="/var/repo-clone/${GITHUB_REPO}"
+# Shared volume mounted in both this container and n8n — used for live reimport
+SHARED_WORKFLOWS_DIR="/workflows-shared"
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 log() {
@@ -66,7 +67,6 @@ validate_workflows() {
 restart_n8n() {
   log "Restarting N8n ..."
   if command -v docker &>/dev/null; then
-    # Locate the n8n container by name pattern (works without compose plugin)
     local container
     container=$(docker ps -qf "name=n8n-app-n8n" 2>/dev/null | head -1)
     if [[ -n "$container" ]]; then
@@ -81,12 +81,54 @@ restart_n8n() {
   fi
 }
 
+reimport_workflows() {
+  log "Copying updated workflows to shared volume ..."
+  mkdir -p "$SHARED_WORKFLOWS_DIR"
+  cp "${CLONE_DIR}/workflows/"*.json "$SHARED_WORKFLOWS_DIR/" 2>/dev/null || {
+    log "WARNING: No workflow JSON files found in clone — skipping reimport."
+    return 0
+  }
+
+  log "Waiting for N8n to be healthy before reimporting ..."
+  local attempts=0
+  until curl -sf "${N8N_URL}/healthz" > /dev/null 2>&1; do
+    attempts=$((attempts + 1))
+    if [[ $attempts -ge 30 ]]; then
+      log "WARNING: N8n did not become healthy within 60s — skipping reimport."
+      return 0
+    fi
+    sleep 2
+  done
+
+  log "N8n healthy. Reimporting workflows via docker exec ..."
+  local container
+  container=$(docker ps -qf "name=n8n-app-n8n" 2>/dev/null | head -1)
+  if [[ -z "$container" ]]; then
+    log "WARNING: Could not find n8n container for exec — skipping reimport."
+    return 0
+  fi
+
+  local imported=0
+  for f in "${SHARED_WORKFLOWS_DIR}/"*.json; do
+    name=$(basename "$f")
+    if docker exec "$container" n8n import:workflow --input="/workflows-shared/${name}" 2>&1 | \
+         tee -a "$LOG_FILE" | grep -q "Successfully imported"; then
+      log "  Reimported: $name"
+      imported=$((imported + 1))
+    else
+      log "  WARN: reimport may have failed for $name (check logs above)"
+    fi
+  done
+  log "Reimport complete: $imported file(s) processed."
+}
+
 deploy() {
   local sha="$1"
   log "=== Deploy triggered for SHA: ${sha} ==="
   pull_latest
   if validate_workflows; then
     restart_n8n
+    reimport_workflows
     echo "$sha" > "$STATE_FILE"
     log "=== Deploy complete for SHA: ${sha} ==="
   else

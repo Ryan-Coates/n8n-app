@@ -31,6 +31,7 @@ services:
     volumes:
       - n8n_data:/home/node/.n8n
       - ./workflows:/workflows:ro
+      - workflows_shared:/workflows-shared
     depends_on:
       postgres:
         condition: service_healthy
@@ -75,6 +76,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - polling_logs:/var/log
       - repo_clone:/var/repo-clone
+      - workflows_shared:/workflows-shared
     depends_on:
       - n8n
 
@@ -83,3 +85,4 @@ volumes:
   n8n_data:
   polling_logs:
   repo_clone:
+  workflows_shared:
