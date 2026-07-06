@@ -6,6 +6,6 @@ WORKDIR /app
 COPY deploy-manager.sh .
 RUN chmod +x deploy-manager.sh
 
-VOLUME ["/repo", "/var/log"]
+VOLUME ["/var/log", "/var/repo-clone"]
 
 ENTRYPOINT ["/app/deploy-manager.sh"]

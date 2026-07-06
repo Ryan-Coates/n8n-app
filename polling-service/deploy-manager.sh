@@ -12,9 +12,10 @@ GITHUB_OWNER="${GITHUB_OWNER:-Ryan-Coates}"
 GITHUB_REPO="${GITHUB_REPO:-n8n-app}"
 N8N_URL="${N8N_URL:-http://n8n:5678}"
 POLL_INTERVAL="${POLL_INTERVAL:-300}"
-STATE_FILE="/tmp/last_known_sha"
+STATE_FILE="/var/log/last_known_sha"
 LOG_FILE="/var/log/deploy-manager.log"
-REPO_DIR="${REPO_DIR:-/repo}"
+# Use a writable clone dir inside the container volume, not the bind-mount
+CLONE_DIR="/var/repo-clone/${GITHUB_REPO}"
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 log() {
@@ -32,16 +33,22 @@ get_latest_sha() {
 
 # ── Deployment steps ──────────────────────────────────────────────────────────
 pull_latest() {
-  log "Pulling latest from origin/main ..."
-  cd "$REPO_DIR"
-  git fetch origin main
-  git reset --hard origin/main
+  log "Syncing repo to ${CLONE_DIR} ..."
+  if [[ -d "${CLONE_DIR}/.git" ]]; then
+    cd "$CLONE_DIR"
+    git fetch origin main
+    git reset --hard origin/main
+  else
+    mkdir -p "$(dirname "$CLONE_DIR")"
+    git clone "https://${GITHUB_TOKEN}@github.com/${GITHUB_OWNER}/${GITHUB_REPO}.git" "$CLONE_DIR"
+    cd "$CLONE_DIR"
+  fi
 }
 
 validate_workflows() {
   log "Validating workflow JSON exports ..."
   local errors=0
-  for f in "${REPO_DIR}/workflows/"*.json; do
+  for f in "${CLONE_DIR}/workflows/"*.json; do
     if python3 -c "import json; json.load(open('$f'))" 2>/dev/null; then
       log "  OK: $f"
     else

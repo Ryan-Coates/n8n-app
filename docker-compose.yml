@@ -43,11 +43,10 @@ services:
       - GITHUB_REPO=${GITHUB_REPO:-n8n-app}
       - N8N_URL=http://n8n:5678
       - POLL_INTERVAL=${POLL_INTERVAL:-300}
-      - REPO_DIR=/repo
     volumes:
-      - ./:/repo:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - polling_logs:/var/log
+      - repo_clone:/var/repo-clone
     depends_on:
       - n8n
 
@@ -55,3 +54,4 @@ volumes:
   postgres_data:
   n8n_data:
   polling_logs:
+  repo_clone:
