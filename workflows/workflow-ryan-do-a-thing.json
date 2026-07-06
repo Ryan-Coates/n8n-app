@@ -1,32 +1,30 @@
 {
-  "name": "Workflow 2 - File Processing Trigger",
+  "name": "Ryan Do A Thing - Mock POC",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "GET",
-        "path": "process-file",
+        "path": "ryandoathing",
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "webhook-node-2",
+      "id": "webhook-ryan",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [240, 300],
-      "disabled": false
+      "position": [240, 300]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ status: 'ok', message: 'File processing initiated' }) }}",
+        "responseBody": "={{ { status: 'success', message: 'Workflow processed successfully', timestamp: new Date().toISOString(), processed: true } }}",
         "options": {}
       },
-      "id": "respond-node-2",
+      "id": "respond-ryan",
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [460, 300],
-      "disabled": false
+      "position": [460, 300]
     }
   ],
   "connections": {
@@ -42,14 +40,7 @@
       ]
     }
   },
-  "triggers": [
-    {
-      "type": "n8n-nodes-base.webhook",
-      "id": "webhook-node-2",
-      "disabled": false
-    }
-  ],
   "active": true,
   "settings": {},
-  "id": "workflow-2"
+  "id": "workflow-ryan-do-a-thing"
 }
