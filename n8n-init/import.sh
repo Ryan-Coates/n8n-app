@@ -32,7 +32,7 @@ for f in /workflows/*.json; do
     imported=$((imported + 1))
 
     # Extract the workflow ID from the JSON and publish it so webhooks register
-    wf_id=$(grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' "$f" | tail -1 | sed 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+    wf_id=$(node -e "const fs=require('fs');const wf=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(wf.id||'');" "$f")
     if [ -n "$wf_id" ]; then
       echo "  Publishing workflow ID: $wf_id"
       if n8n publish:workflow --id="$wf_id" 2>&1; then
