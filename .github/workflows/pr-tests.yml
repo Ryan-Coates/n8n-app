@@ -5,7 +5,9 @@ on:
     branches: [main]
 
 jobs:
+  # ── Job 1: existing unit + workflow-structure tests ──────────────────────────
   validate-and-test:
+    name: Unit & Workflow Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,3 +23,88 @@ jobs:
 
       - name: Run workflow validation and tests
         run: npm test -- --coverage
+
+  # ── Job 2: static catalog consistency checks (fast, no Docker) ───────────────
+  catalog-static:
+    name: Catalog Static Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate catalog consistency
+        run: node scripts/validate-catalog.js
+
+  # ── Job 3: live n8n smoke test — only runs if static checks pass ─────────────
+  catalog-integration:
+    name: N8n Integration Smoke Test
+    runs-on: ubuntu-latest
+    needs: catalog-static
+    env:
+      POSTGRES_USER: n8n
+      POSTGRES_PASSWORD: n8npassword
+      POSTGRES_DB: n8n
+      N8N_ENCRYPTION_KEY: ci-test-encryption-key-not-for-production
+      WEBHOOK_URL: http://localhost:5678
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Start PostgreSQL
+        run: docker compose up -d postgres
+
+      - name: Wait for PostgreSQL to be healthy
+        run: |
+          echo "Waiting for PostgreSQL..."
+          timeout 30 bash -c 'until docker compose exec -T postgres pg_isready -U n8n; do sleep 2; done'
+          echo "PostgreSQL ready."
+
+      - name: Start N8n
+        run: docker compose up -d n8n
+
+      - name: Wait for N8n to be healthy
+        run: |
+          echo "Waiting for N8n..."
+          timeout 120 bash -c 'until curl -sf http://localhost:5678/healthz > /dev/null 2>&1; do echo "  ...waiting"; sleep 3; done'
+          echo "N8n is healthy."
+
+      - name: Set up N8n owner account (skip setup wizard)
+        run: |
+          curl -sf -X POST http://localhost:5678/api/v1/owner/setup \
+            -H "Content-Type: application/json" \
+            -d '{"email":"ci@trustack.local","firstName":"CI","lastName":"Bot","password":"CiTest1234!"}' \
+            && echo "Owner created." || echo "Owner already exists or setup not required — continuing."
+
+      - name: Import workflows into N8n
+        run: |
+          echo "Importing workflows..."
+          for f in workflows/*.json; do
+            echo "  Importing: $f"
+            docker exec $(docker compose ps -q n8n) n8n import:workflow --input="/workflows/$(basename $f)" \
+              && echo "    OK: $f" || echo "    WARN: import failed for $f (may already exist)"
+          done
+
+      - name: Restart N8n so webhooks are registered
+        run: |
+          docker compose restart n8n
+          echo "Waiting for N8n to be healthy after restart..."
+          timeout 120 bash -c 'until curl -sf http://localhost:5678/healthz > /dev/null 2>&1; do sleep 3; done'
+          # Brief additional wait for webhook registration
+          sleep 5
+          echo "N8n ready."
+
+      - name: Run webhook smoke tests
+        run: node scripts/test-webhooks.js
+
+      - name: Show N8n logs on failure
+        if: failure()
+        run: docker compose logs n8n --tail=50
+
