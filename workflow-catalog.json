@@ -57,6 +57,20 @@
       "ci": ".github/workflows/pr-tests.yml",
       "tests": "tests/",
       "maintainer": "Ryan-Coates"
+    },
+    {
+      "id": "workflow-ryan-do-a-thing",
+      "name": "Ryan Do A Thing - Mock POC",
+      "description": "A mock POC workflow demonstrating the end-to-end create-workflow skill and CI/CD pipeline. Accepts any JSON object and confirms processing.",
+      "file": "workflows/workflow-ryan-do-a-thing.json",
+      "source_repo": "https://github.com/Ryan-Coates/workflow-ryan-do-a-thing",
+      "webhook_path": "/webhooks/ryandoathing",
+      "method": "POST",
+      "language": "Node.js",
+      "tags": ["poc", "webhook", "mock"],
+      "ci": ".github/workflows/pr-tests.yml",
+      "tests": "tests/",
+      "maintainer": "Ryan-Coates"
     }
   ]
 }

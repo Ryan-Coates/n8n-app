@@ -1,0 +1,46 @@
+{
+  "name": "Ryan Do A Thing - Mock POC",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ryandoathing",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-ryan",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'success', message: 'Workflow processed successfully', timestamp: new Date().toISOString(), processed: true } }}",
+        "options": {}
+      },
+      "id": "respond-ryan",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "id": "workflow-ryan-do-a-thing"
+}
