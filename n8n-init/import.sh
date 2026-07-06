@@ -15,6 +15,7 @@ echo "N8n is ready. Starting workflow import..."
 echo ""
 
 imported=0
+published=0
 failed=0
 
 for f in /workflows/*.json; do
@@ -29,6 +30,18 @@ for f in /workflows/*.json; do
   if n8n import:workflow --input="$f" 2>&1; then
     echo "  OK: $name"
     imported=$((imported + 1))
+
+    # Extract the workflow ID from the JSON and publish it so webhooks register
+    wf_id=$(grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' "$f" | tail -1 | sed 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+    if [ -n "$wf_id" ]; then
+      echo "  Publishing workflow ID: $wf_id"
+      if n8n publish:workflow --id="$wf_id" 2>&1; then
+        echo "  Published: $wf_id"
+        published=$((published + 1))
+      else
+        echo "  WARN: failed to publish $wf_id"
+      fi
+    fi
   else
     echo "  WARN: failed to import $name (may already exist or schema not ready)"
     failed=$((failed + 1))
@@ -36,4 +49,4 @@ for f in /workflows/*.json; do
 done
 
 echo ""
-echo "=== Import complete: $imported imported, $failed failed ==="
+echo "=== Import complete: $imported imported, $published published, $failed failed ==="
