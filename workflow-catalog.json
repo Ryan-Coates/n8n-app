@@ -43,6 +43,20 @@
       "ci": ".github/workflows/pr-tests.yml",
       "tests": "tests/",
       "maintainer": "Ryan-Coates"
+    },
+    {
+      "id": "workflow-dosomething",
+      "name": "Workflow DoSomething",
+      "description": "POC workflow created via the create-workflow skill. Accepts any JSON object and returns it with processed metadata.",
+      "file": "workflows/workflow-dosomething.json",
+      "source_repo": "https://github.com/Ryan-Coates/workflow-dosomething",
+      "webhook_path": "/webhook/dosomething",
+      "method": "POST",
+      "language": "Node.js",
+      "tags": ["poc", "webhook"],
+      "ci": ".github/workflows/pr-tests.yml",
+      "tests": "tests/",
+      "maintainer": "Ryan-Coates"
     }
   ]
 }
