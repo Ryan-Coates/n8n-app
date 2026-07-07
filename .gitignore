@@ -2,3 +2,5 @@ node_modules/
 coverage/
 .env
 *.log
+.secrets
+deploy.log

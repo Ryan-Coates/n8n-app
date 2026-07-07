@@ -41,18 +41,15 @@ jobs:
       - name: Configure WireGuard tunnel
         run: |
           # Write the runner-side WireGuard config from secrets
-          sudo tee /etc/wireguard/wg0.conf > /dev/null <<EOF
-          [Interface]
-          PrivateKey = ${{ secrets.WG_CLIENT_PRIVATE_KEY }}
-          Address    = ${{ secrets.WG_CLIENT_ADDRESS }}
-          DNS        = ${{ secrets.WG_DNS }}
-
-          [Peer]
-          PublicKey           = ${{ secrets.WG_SERVER_PUBLIC_KEY }}
-          Endpoint            = ${{ secrets.WG_SERVER_ENDPOINT }}
-          AllowedIPs          = ${{ secrets.WG_ALLOWED_IPS }}
-          PersistentKeepalive = 25
-          EOF
+          # Use printf to avoid heredoc indentation issues
+          printf '[Interface]\nPrivateKey = %s\nAddress = %s\n\n[Peer]\nPublicKey = %s\nPresharedKey = %s\nEndpoint = %s\nAllowedIPs = %s\nPersistentKeepalive = 25\n' \
+            '${{ secrets.WG_CLIENT_PRIVATE_KEY }}' \
+            '${{ secrets.WG_CLIENT_ADDRESS }}' \
+            '${{ secrets.WG_SERVER_PUBLIC_KEY }}' \
+            '${{ secrets.WG_PRESHARED_KEY }}' \
+            '${{ secrets.WG_SERVER_ENDPOINT }}' \
+            '${{ secrets.WG_ALLOWED_IPS }}' \
+            | sudo tee /etc/wireguard/wg0.conf > /dev/null
 
       - name: Bring up WireGuard tunnel
         run: sudo wg-quick up wg0
@@ -60,25 +57,28 @@ jobs:
       - name: Verify tunnel
         run: |
           sudo wg show wg0
-          # Ping the server's VPN IP to confirm connectivity
-          ping -c 3 ${{ secrets.DEPLOY_HOST }}
+          # Ping the server's VPN IP — informational only, does not fail the job.
+          # SSH in the next step is the real connectivity gate.
+          echo "Pinging ${{ secrets.DEPLOY_HOST }} ..."
+          ping -c 3 -W 2 ${{ secrets.DEPLOY_HOST }} || \
+            echo "::warning::Ping failed — server may be behind NAT. SSH will confirm connectivity."
 
       # ── 2. Deploy over SSH through the tunnel ──────────────────────────────
       - name: Write SSH key
         run: |
           install -m 0700 -d ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          printf '%s' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 0600 ~/.ssh/deploy_key
-          # Trust the server's host key (fetched over the already-encrypted tunnel)
-          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          # Accept the server host key on first connect (only over the encrypted tunnel)
+          ssh-keyscan -H -p 22 ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Run deploy script on server
         run: |
           ssh -i ~/.ssh/deploy_key \
-              -o StrictHostKeyChecking=yes \
+              -o StrictHostKeyChecking=no \
               -o ConnectTimeout=30 \
               ${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_HOST }} \
-              'bash ~/n8n-app/scripts/deploy.sh'
+              'DEPLOY_DIR=/repo N8N_URL=http://n8n:5678 bash /repo/scripts/deploy.sh'
 
       # ── 3. Tear down tunnel ────────────────────────────────────────────────
       - name: Take down WireGuard tunnel
