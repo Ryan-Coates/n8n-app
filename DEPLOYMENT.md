@@ -1,4 +1,221 @@
-# Deployment Guide — WireGuard Push Deploy
+# Deployment Guide — Tailscale Push Deploy
+
+Deployments are **manual and push-based**: a GitHub Actions workflow joins the
+same private Tailscale network as the server and runs a deploy script over SSH.
+There are no inbound ports, no port-forwarding, and no firewall rules needed
+on the server.
+
+---
+
+## Architecture
+
+```
+GitHub Actions runner          Server (private, no inbound ports)
+       │                              │
+       │ outbound HTTPS               │ outbound HTTPS
+       ▼                              ▼
+  Tailscale coordination plane (Tailscale relay)
+       │                              │
+       └──── encrypted WireGuard tunnel ────┘
+                        │
+            SSH to deploy-agent Tailscale IP
+                        │
+              deploy-agent container (sshd)
+                        │  docker.sock + ./:/repo
+                        ▼
+              scripts/deploy.sh
+                ├─ git fetch + reset --hard origin/main
+                ├─ validate workflow JSON
+                ├─ docker cp + n8n import:workflow
+                └─ docker restart n8n
+```
+
+**Why Tailscale, not raw WireGuard:**  
+Raw WireGuard requires one peer to have a publicly-reachable UDP endpoint (port
+forwarding + firewall rule). Tailscale is built on WireGuard but adds a
+coordination plane so **both sides connect out** — the server stays completely
+private.
+
+---
+
+## Prerequisites
+
+### Server
+
+| Requirement | Notes |
+|---|---|
+| Docker Desktop / Docker Engine + Compose v2 | Stack runs in Docker |
+| Outbound HTTPS (port 443) | Tailscale coordination — standard internet access |
+| `/dev/net/tun` device | Available by default on Linux and Docker Desktop |
+
+No inbound ports, no router config, no firewall rules needed.
+
+### Tailscale account
+
+Sign up free at [tailscale.com](https://tailscale.com). The free tier supports
+up to 100 devices.
+
+---
+
+## First-Time Server Setup
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Ryan-Coates/n8n-app.git ~/n8n-app
+cd ~/n8n-app
+```
+
+### 2. Generate a Tailscale auth key
+
+1. Go to **[Tailscale Admin → Settings → Keys](https://login.tailscale.com/admin/settings/keys)**
+2. Click **Generate auth key**
+3. Set **Reusable** ✓ and **Pre-authorized** ✓
+4. Copy the key — it starts with `tskey-auth-...`
+
+### 3. Add `TS_AUTHKEY` to `.env`
+
+```bash
+echo "TS_AUTHKEY=tskey-auth-xxxxx" >> ~/n8n-app/.env
+```
+
+### 4. Start the stack
+
+```bash
+docker compose up -d
+```
+
+The `tailscale` container starts, connects out to Tailscale, and registers as
+`n8n-deploy-agent` in your Tailscale network.
+
+### 5. Find the Tailscale IP
+
+```bash
+docker exec ts-deploy tailscale ip -4
+# or check the Tailscale admin console — look for "n8n-deploy-agent"
+```
+
+This is the `DEPLOY_HOST` value you'll add to GitHub secrets.
+
+### 6. Generate an SSH key pair for GitHub Actions
+
+> Always generate SSH keys **inside Docker** to avoid Windows CRLF issues.
+
+```bash
+docker run --rm alpine sh -c \
+  "apk add -q openssh && \
+   ssh-keygen -t ed25519 -N '' -q -f /tmp/dk && \
+   echo '=== PRIVATE (base64) ===' && cat /tmp/dk | base64 -w0 && \
+   echo '' && echo '=== PUBLIC ===' && cat /tmp/dk.pub"
+```
+
+- **Private key** (base64) → decode and set as `DEPLOY_SSH_KEY` GitHub secret  
+- **Public key** → update `AUTHORIZED_KEY` in `docker-compose.yml` under
+  `deploy-agent`, then run `docker compose up -d deploy-agent`
+
+### 7. Add GitHub Actions secrets
+
+| Secret | Value |
+|---|---|
+| `TS_AUTHKEY` | Tailscale auth key from step 2 |
+| `DEPLOY_HOST` | Tailscale IP from step 5 (e.g. `100.x.x.x`) |
+| `DEPLOY_SSH_USER` | `root` |
+| `DEPLOY_SSH_KEY` | ed25519 private key from step 6 |
+
+---
+
+## Triggering a Deploy
+
+1. Go to **Actions → Deploy to Server** on GitHub.
+2. Click **Run workflow**.
+3. Type `deploy` in the confirmation field.
+4. Click **Run workflow**.
+
+The action steps:
+
+| Step | What it does |
+|---|---|
+| Connect to Tailscale | Runner joins your private Tailscale network (outbound only) |
+| Write SSH key | Writes `DEPLOY_SSH_KEY` to `~/.ssh/deploy_key` |
+| Run deploy script | `ssh root@<DEPLOY_HOST> 'DEPLOY_DIR=/repo ... bash /repo/scripts/deploy.sh'` |
+
+---
+
+## What `scripts/deploy.sh` Does
+
+```
+git fetch origin main
+git reset --hard origin/main
+├── Validate all workflows/*.json (python3 json.load)
+├── Wait for n8n /healthz (up to 60 s)
+├── docker cp <workflow>.json → n8n container /tmp/
+├── docker exec n8n n8n import:workflow --input=/tmp/<workflow>.json
+└── docker restart <n8n container>
+```
+
+Logs: `$DEPLOY_DIR/deploy.log` (maps to the repo root on the host).
+
+---
+
+## Local Testing
+
+### PowerShell (Windows)
+
+```powershell
+# Get deploy-agent IP on the Docker bridge
+$ip = (docker inspect deploy-agent | ConvertFrom-Json).NetworkSettings.Networks."n8n-app_default".IPAddress
+
+# Generate a temp key, inject it, run deploy.sh
+$kd = docker run --rm alpine sh -c "apk add -q openssh >/dev/null 2>&1 && ssh-keygen -t ed25519 -N '' -q -f /tmp/dk && cat /tmp/dk | base64 -w0 && echo && cat /tmp/dk.pub"
+$pb64 = $kd[0].Trim(); $pub = $kd[1].Trim()
+docker exec deploy-agent sh -c "echo '$pub' >> /root/.ssh/authorized_keys"
+
+docker run --rm -e "DK_B64=$pb64" --network n8n-app_default alpine sh -c `
+  "apk add -q openssh-client >/dev/null 2>&1 && echo `$DK_B64 | base64 -d > /tmp/dk && chmod 600 /tmp/dk && `
+   ssh -i /tmp/dk -o StrictHostKeyChecking=no -o BatchMode=yes root@$ip `
+   'DEPLOY_DIR=/repo N8N_URL=http://n8n:5678 bash /repo/scripts/deploy.sh'"
+```
+
+### `act` (full GitHub Actions YAML)
+
+```powershell
+# Install: winget install nektos.act
+# Create .secrets from .secrets.example with real values
+act workflow_dispatch -W .github/workflows/deploy.yml `
+  --input environment=production --input confirm=deploy `
+  --secret-file .secrets
+```
+
+---
+
+## Rotating Credentials
+
+### Rotate SSH key
+
+1. Generate a new key pair (step 6 above).
+2. Update `AUTHORIZED_KEY` in `docker-compose.yml`, run `docker compose up -d deploy-agent`.
+3. Update `DEPLOY_SSH_KEY` in GitHub Actions secrets.
+4. Commit and push `docker-compose.yml`.
+
+### Rotate Tailscale auth key
+
+1. Generate a new key in the Tailscale admin console.
+2. Update `TS_AUTHKEY` in `.env` and in the `TS_AUTHKEY` GitHub secret.
+3. `docker compose up -d tailscale` (container re-authenticates on restart).
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `tailscale` container not appearing in admin console | Wrong or expired `TS_AUTHKEY` | Generate a new reusable pre-authorized key |
+| SSH `Connection refused` to Tailscale IP | deploy-agent not running | `docker compose up -d deploy-agent` |
+| SSH `Permission denied` | Wrong key or stale authorized_keys | Re-run step 6, update compose, restart deploy-agent |
+| `Load key: error in libcrypto` | Key generated on Windows (CRLF) | Generate inside Docker (step 6) |
+| `set: pipefail: invalid option` | CRLF in shell scripts | `.gitattributes` enforces `eol=lf` — run `git reset --hard HEAD` |
+| `n8n did not become healthy` | n8n not running | `docker compose up -d` |
+| `/dev/net/tun: no such file` | Docker Desktop version too old | Update Docker Desktop |
 
 Deployments are **manual and push-based**: a GitHub Actions workflow connects to
 the server through an encrypted WireGuard VPN tunnel and runs a deploy script
