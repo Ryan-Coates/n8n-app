@@ -472,19 +472,29 @@ which maps to the repo root on the host).
 | `n8n did not become healthy` | n8n not running | `docker compose up -d` on server |
 | `docker exec` fails in deploy.sh | deploy-agent can't reach n8n by hostname | Ensure deploy-agent shares wireguard's network (`network_mode: "service:wireguard"`) |
 
----
+## Current Setup (POC)
 
-## Current POC Values
-
-Generated during initial setup. **Rotate all keys before any production use.**
+The following is the **live, working** configuration generated during initial
+setup. All credentials should be rotated before any production use.
 
 | Item | Value |
 |---|---|
-| Server public IP | `213.218.200.158` |
-| WireGuard server VPN IP | `10.13.13.1` |
-| WireGuard client (runner) VPN IP | `10.13.13.2` |
-| WireGuard listen port | `51820/UDP` |
-| n8n web UI | `http://localhost:5678` |
+| Tailscale tailnet | `ryan-coates.github` |
+| deploy-agent Tailscale IP | `100.93.186.1` |
+| deploy-agent hostname | `n8n-deploy-agent` |
+| Tailscale auth key description | `n8n-app CI deploy` (reusable, expires Oct 2026) |
+| GitHub secrets set | `TS_AUTHKEY`, `DEPLOY_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_KEY` |
+| Last verified | 2026-07-07 — action run #2 `completed / success` |
+
+```
+Steps:
+  1. Set up job          ✓
+  2. Checkout            ✓
+  3. Connect Tailscale   ✓  (runner joined ryan-coates.github tailnet)
+  4. Write SSH key       ✓
+  5. Run deploy script   ✓  (git pull → validate → import 5 workflows → restart n8n)
+  9. Post Tailscale      ✓  (runner removed from tailnet)
+```
 
 ---
 
