@@ -30,16 +30,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 1. Join the private Tailscale network ─────────────────────────────
-      # Both this runner and the deploy-agent container on the server connect
-      # OUT to Tailscale's coordination plane. No inbound ports, no firewall
-      # rules, and no port-forwarding are required on the server.
-      - name: Connect to Tailscale
-        uses: tailscale/github-action@v3
-        with:
-          authkey: ${{ secrets.TS_AUTHKEY }}
+      # ── 1. Install cloudflared on the runner ──────────────────────────────
+      # cloudflared acts as the SSH ProxyCommand, routing the connection
+      # through the Cloudflare tunnel to the deploy-agent on the server.
+      # No inbound ports, no firewall rules, no VPN keys needed on the runner.
+      - name: Install cloudflared
+        run: |
+          curl -fsSL --output cloudflared.deb \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i cloudflared.deb
+          cloudflared version
 
-      # ── 2. Deploy over SSH through the Tailscale tunnel ───────────────────
+      # ── 2. Deploy over SSH through the Cloudflare tunnel ─────────────────
       - name: Write SSH key
         run: |
           install -m 0700 -d ~/.ssh
@@ -47,9 +49,15 @@ jobs:
           chmod 0600 ~/.ssh/deploy_key
 
       - name: Run deploy script on server
+        env:
+          # cloudflared reads these automatically to authenticate with
+          # the Cloudflare Access service token protecting the SSH hostname
+          CLOUDFLARE_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CLOUDFLARE_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         run: |
-          ssh -i ~/.ssh/deploy_key \
+          ssh -o "ProxyCommand=cloudflared access ssh --hostname ${{ secrets.CF_TUNNEL_HOSTNAME }}" \
               -o StrictHostKeyChecking=no \
               -o ConnectTimeout=30 \
-              ${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_HOST }} \
+              -i ~/.ssh/deploy_key \
+              ${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.CF_TUNNEL_HOSTNAME }} \
               'DEPLOY_DIR=/repo N8N_URL=http://n8n:5678 bash /repo/scripts/deploy.sh'

@@ -63,48 +63,36 @@ services:
       - ./n8n-init/import.sh:/import.sh:ro
     entrypoint: ["/bin/sh", "/import.sh"]
 
-  # ── Tailscale VPN ────────────────────────────────────────────────────────────
-  # Connects OUT to Tailscale's coordination server — no inbound ports, no
-  # port-forwarding, no firewall rules needed on the host. The deploy-agent
-  # shares this container's network namespace so it receives SSH traffic that
-  # arrives over the Tailscale tunnel.
-  tailscale:
-    image: ghcr.io/tailscale/tailscale:stable
-    container_name: ts-deploy
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    devices:
-      - /dev/net/tun
+  # ── Cloudflare Tunnel ─────────────────────────────────────────────────────
+  # Connects outbound to Cloudflare — no inbound ports needed on the host.
+  # The deploy-agent shares this container's network namespace so SSH traffic
+  # arriving through the Cloudflare Access tunnel hits its sshd on port 22.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cf-tunnel
+    command: tunnel --no-autoupdate run
     environment:
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_HOSTNAME=n8n-deploy-agent
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=false
-    volumes:
-      - tailscale_state:/var/lib/tailscale
+      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
     restart: unless-stopped
 
   # ── Deploy agent (SSH target) ─────────────────────────────────────────────
-  # Shares the Tailscale container's network namespace — SSH traffic that
-  # arrives over the Tailscale tunnel hits this container's sshd on port 22.
-  # GitHub Actions joins the same Tailscale network and SSHes to the
-  # Tailscale IP of this host (visible in the Tailscale admin console).
+  # Shares cloudflared's network namespace — SSH arrives via Cloudflare Access.
+  # GitHub Actions authenticates with a service token (CF_ACCESS_CLIENT_ID +
+  # CF_ACCESS_CLIENT_SECRET) and uses cloudflared as the SSH ProxyCommand.
   deploy-agent:
     build: ./deploy-agent
     container_name: deploy-agent
-    network_mode: "service:tailscale"
+    network_mode: "service:cloudflared"
     environment:
       - AUTHORIZED_KEY=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIYb2KkgJtRoOEZfJg+nqx9/UINLKNRC+/Q8JTWB4SqC root@3aca4447c599
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./:/repo
     depends_on:
-      - tailscale
+      - cloudflared
     restart: unless-stopped
 
 volumes:
   postgres_data:
   n8n_data:
   workflows_shared:
-  tailscale_state:
