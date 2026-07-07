@@ -30,47 +30,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 1. Set up WireGuard VPN tunnel ─────────────────────────────────────
-      # Establishes a private tunnel between the GitHub Actions runner and the
-      # server before any SSH traffic is sent. All deploy traffic travels
-      # inside the encrypted WireGuard tunnel — the server's SSH port is NOT
-      # exposed to the public internet.
-      - name: Install WireGuard
-        run: sudo apt-get update -qq && sudo apt-get install -y wireguard
+      # ── 1. Join the private Tailscale network ─────────────────────────────
+      # Both this runner and the deploy-agent container on the server connect
+      # OUT to Tailscale's coordination plane. No inbound ports, no firewall
+      # rules, and no port-forwarding are required on the server.
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
 
-      - name: Configure WireGuard tunnel
-        run: |
-          # Write the runner-side WireGuard config from secrets
-          # Use printf to avoid heredoc indentation issues
-          printf '[Interface]\nPrivateKey = %s\nAddress = %s\n\n[Peer]\nPublicKey = %s\nPresharedKey = %s\nEndpoint = %s\nAllowedIPs = %s\nPersistentKeepalive = 25\n' \
-            '${{ secrets.WG_CLIENT_PRIVATE_KEY }}' \
-            '${{ secrets.WG_CLIENT_ADDRESS }}' \
-            '${{ secrets.WG_SERVER_PUBLIC_KEY }}' \
-            '${{ secrets.WG_PRESHARED_KEY }}' \
-            '${{ secrets.WG_SERVER_ENDPOINT }}' \
-            '${{ secrets.WG_ALLOWED_IPS }}' \
-            | sudo tee /etc/wireguard/wg0.conf > /dev/null
-
-      - name: Bring up WireGuard tunnel
-        run: sudo wg-quick up wg0
-
-      - name: Verify tunnel
-        run: |
-          sudo wg show wg0
-          # Ping the server's VPN IP — informational only, does not fail the job.
-          # SSH in the next step is the real connectivity gate.
-          echo "Pinging ${{ secrets.DEPLOY_HOST }} ..."
-          ping -c 3 -W 2 ${{ secrets.DEPLOY_HOST }} || \
-            echo "::warning::Ping failed — server may be behind NAT. SSH will confirm connectivity."
-
-      # ── 2. Deploy over SSH through the tunnel ──────────────────────────────
+      # ── 2. Deploy over SSH through the Tailscale tunnel ───────────────────
       - name: Write SSH key
         run: |
           install -m 0700 -d ~/.ssh
           printf '%s' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 0600 ~/.ssh/deploy_key
-          # Accept the server host key on first connect (only over the encrypted tunnel)
-          ssh-keyscan -H -p 22 ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Run deploy script on server
         run: |
@@ -79,8 +53,3 @@ jobs:
               -o ConnectTimeout=30 \
               ${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_HOST }} \
               'DEPLOY_DIR=/repo N8N_URL=http://n8n:5678 bash /repo/scripts/deploy.sh'
-
-      # ── 3. Tear down tunnel ────────────────────────────────────────────────
-      - name: Take down WireGuard tunnel
-        if: always()
-        run: sudo wg-quick down wg0

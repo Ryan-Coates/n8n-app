@@ -63,53 +63,48 @@ services:
       - ./n8n-init/import.sh:/import.sh:ro
     entrypoint: ["/bin/sh", "/import.sh"]
 
-  # ── WireGuard VPN server ─────────────────────────────────────────────────────
-  # Accepts encrypted UDP on 51820. The deploy-agent shares this container's
-  # network namespace so SSH traffic arriving over the tunnel hits the
-  # deploy-agent's sshd directly at 10.13.13.1:22.
-  wireguard:
-    image: lscr.io/linuxserver/wireguard:latest
-    container_name: wg-server
+  # ── Tailscale VPN ────────────────────────────────────────────────────────────
+  # Connects OUT to Tailscale's coordination server — no inbound ports, no
+  # port-forwarding, no firewall rules needed on the host. The deploy-agent
+  # shares this container's network namespace so it receives SSH traffic that
+  # arrives over the Tailscale tunnel.
+  tailscale:
+    image: ghcr.io/tailscale/tailscale:stable
+    container_name: ts-deploy
     cap_add:
       - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun
     environment:
-      - PUID=0
-      - PGID=0
-      - TZ=Etc/UTC
-      - SERVERURL=${WG_SERVER_URL:-213.218.200.158}
-      - SERVERPORT=51820
-      - PEERS=githubactions
-      - PEERDNS=1.1.1.1
-      - INTERNAL_SUBNET=10.13.13.0/24
-      - ALLOWEDIPS=10.13.13.1/32
-      - LOG_CONFS=true
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_HOSTNAME=n8n-deploy-agent
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
     volumes:
-      - wireguard_config:/config
-    ports:
-      - "51820:51820/udp"
-    sysctls:
-      - net.ipv4.conf.all.src_valid_mark=1
+      - tailscale_state:/var/lib/tailscale
     restart: unless-stopped
 
   # ── Deploy agent (SSH target) ─────────────────────────────────────────────
-  # Shares wireguard's network namespace — accessible at the WireGuard VPN IP.
-  # GitHub Actions SSHs here after establishing the tunnel, then runs
-  # scripts/deploy.sh which pulls main, reimports workflows, and restarts n8n.
+  # Shares the Tailscale container's network namespace — SSH traffic that
+  # arrives over the Tailscale tunnel hits this container's sshd on port 22.
+  # GitHub Actions joins the same Tailscale network and SSHes to the
+  # Tailscale IP of this host (visible in the Tailscale admin console).
   deploy-agent:
     build: ./deploy-agent
     container_name: deploy-agent
-    network_mode: "service:wireguard"
+    network_mode: "service:tailscale"
     environment:
       - AUTHORIZED_KEY=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIYb2KkgJtRoOEZfJg+nqx9/UINLKNRC+/Q8JTWB4SqC root@3aca4447c599
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./:/repo
     depends_on:
-      - wireguard
+      - tailscale
     restart: unless-stopped
 
 volumes:
   postgres_data:
   n8n_data:
   workflows_shared:
-  wireguard_config:
+  tailscale_state:
