@@ -98,7 +98,7 @@ jobs:
           echo "Publishing workflows..."
           for f in workflows/*.json; do
             case "$f" in *catalog*) continue ;; esac
-            wf_id=$(grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' "$f" | tail -1 | sed 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+            wf_id=$(node -e "const fs=require('fs');try{const wf=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));if(!wf.id){process.stderr.write('Missing top-level workflow id in '+process.argv[1]+'\n');process.exit(1);}process.stdout.write(wf.id);}catch(err){process.stderr.write('Failed to parse workflow file '+process.argv[1]+': '+err.message+'\n');process.exit(1);}" "$f")
             if [ -n "$wf_id" ]; then
               echo "  Publishing: $wf_id"
               docker exec $(docker compose ps -q n8n) n8n publish:workflow --id="$wf_id" \
@@ -121,4 +121,3 @@ jobs:
       - name: Show N8n logs on failure
         if: failure()
         run: docker compose logs n8n --tail=50
-
