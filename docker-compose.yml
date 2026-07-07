@@ -63,26 +63,7 @@ services:
       - ./n8n-init/import.sh:/import.sh:ro
     entrypoint: ["/bin/sh", "/import.sh"]
 
-  polling-service:
-    build: ./polling-service
-    restart: unless-stopped
-    environment:
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
-      - GITHUB_OWNER=${GITHUB_OWNER:-Ryan-Coates}
-      - GITHUB_REPO=${GITHUB_REPO:-n8n-app}
-      - N8N_URL=http://n8n:5678
-      - POLL_INTERVAL=${POLL_INTERVAL:-60}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - polling_logs:/var/log
-      - repo_clone:/var/repo-clone
-      - workflows_shared:/workflows-shared
-    depends_on:
-      - n8n
-
 volumes:
   postgres_data:
   n8n_data:
-  polling_logs:
-  repo_clone:
   workflows_shared:

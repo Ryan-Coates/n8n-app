@@ -1,0 +1,86 @@
+name: Deploy to Server
+
+# ── Trigger ───────────────────────────────────────────────────────────────────
+# Manual dispatch only — no automatic deploys.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+      confirm:
+        description: 'Type "deploy" to confirm'
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    name: Deploy via WireGuard + SSH
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    # Guard against accidental triggers
+    if: github.event.inputs.confirm == 'deploy'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 1. Set up WireGuard VPN tunnel ─────────────────────────────────────
+      # Establishes a private tunnel between the GitHub Actions runner and the
+      # server before any SSH traffic is sent. All deploy traffic travels
+      # inside the encrypted WireGuard tunnel — the server's SSH port is NOT
+      # exposed to the public internet.
+      - name: Install WireGuard
+        run: sudo apt-get update -qq && sudo apt-get install -y wireguard
+
+      - name: Configure WireGuard tunnel
+        run: |
+          # Write the runner-side WireGuard config from secrets
+          sudo tee /etc/wireguard/wg0.conf > /dev/null <<EOF
+          [Interface]
+          PrivateKey = ${{ secrets.WG_CLIENT_PRIVATE_KEY }}
+          Address    = ${{ secrets.WG_CLIENT_ADDRESS }}
+          DNS        = ${{ secrets.WG_DNS }}
+
+          [Peer]
+          PublicKey           = ${{ secrets.WG_SERVER_PUBLIC_KEY }}
+          Endpoint            = ${{ secrets.WG_SERVER_ENDPOINT }}
+          AllowedIPs          = ${{ secrets.WG_ALLOWED_IPS }}
+          PersistentKeepalive = 25
+          EOF
+
+      - name: Bring up WireGuard tunnel
+        run: sudo wg-quick up wg0
+
+      - name: Verify tunnel
+        run: |
+          sudo wg show wg0
+          # Ping the server's VPN IP to confirm connectivity
+          ping -c 3 ${{ secrets.DEPLOY_HOST }}
+
+      # ── 2. Deploy over SSH through the tunnel ──────────────────────────────
+      - name: Write SSH key
+        run: |
+          install -m 0700 -d ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 0600 ~/.ssh/deploy_key
+          # Trust the server's host key (fetched over the already-encrypted tunnel)
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Run deploy script on server
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=yes \
+              -o ConnectTimeout=30 \
+              ${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_HOST }} \
+              'bash ~/n8n-app/scripts/deploy.sh'
+
+      # ── 3. Tear down tunnel ────────────────────────────────────────────────
+      - name: Take down WireGuard tunnel
+        if: always()
+        run: sudo wg-quick down wg0
