@@ -63,26 +63,53 @@ services:
       - ./n8n-init/import.sh:/import.sh:ro
     entrypoint: ["/bin/sh", "/import.sh"]
 
-  polling-service:
-    build: ./polling-service
-    restart: unless-stopped
+  # ── WireGuard VPN server ─────────────────────────────────────────────────────
+  # Accepts encrypted UDP on 51820. The deploy-agent shares this container's
+  # network namespace so SSH traffic arriving over the tunnel hits the
+  # deploy-agent's sshd directly at 10.13.13.1:22.
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:latest
+    container_name: wg-server
+    cap_add:
+      - NET_ADMIN
     environment:
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
-      - GITHUB_OWNER=${GITHUB_OWNER:-Ryan-Coates}
-      - GITHUB_REPO=${GITHUB_REPO:-n8n-app}
-      - N8N_URL=http://n8n:5678
-      - POLL_INTERVAL=${POLL_INTERVAL:-60}
+      - PUID=0
+      - PGID=0
+      - TZ=Etc/UTC
+      - SERVERURL=${WG_SERVER_URL:-213.218.200.158}
+      - SERVERPORT=51820
+      - PEERS=githubactions
+      - PEERDNS=1.1.1.1
+      - INTERNAL_SUBNET=10.13.13.0/24
+      - ALLOWEDIPS=10.13.13.1/32
+      - LOG_CONFS=true
+    volumes:
+      - wireguard_config:/config
+    ports:
+      - "51820:51820/udp"
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+
+  # ── Deploy agent (SSH target) ─────────────────────────────────────────────
+  # Shares wireguard's network namespace — accessible at the WireGuard VPN IP.
+  # GitHub Actions SSHs here after establishing the tunnel, then runs
+  # scripts/deploy.sh which pulls main, reimports workflows, and restarts n8n.
+  deploy-agent:
+    build: ./deploy-agent
+    container_name: deploy-agent
+    network_mode: "service:wireguard"
+    environment:
+      - AUTHORIZED_KEY=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIYb2KkgJtRoOEZfJg+nqx9/UINLKNRC+/Q8JTWB4SqC root@3aca4447c599
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - polling_logs:/var/log
-      - repo_clone:/var/repo-clone
-      - workflows_shared:/workflows-shared
+      - ./:/repo
     depends_on:
-      - n8n
+      - wireguard
+    restart: unless-stopped
 
 volumes:
   postgres_data:
   n8n_data:
-  polling_logs:
-  repo_clone:
   workflows_shared:
+  wireguard_config:
