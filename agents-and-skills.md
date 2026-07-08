@@ -362,13 +362,9 @@ Create skill files in `.github/skills/`:
 
 Architect Skills:
 - design-workflow.skill.md
-- create-spec.skill.md
-- write-readme.skill.md
 
 Developer Skills:
 - create-workflow.skill.md
-- generate-tests.skill.md
-- validate-schema.skill.md
 - update-platform.skill.md
 
 Each skill file must:
