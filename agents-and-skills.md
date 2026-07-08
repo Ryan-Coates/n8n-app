@@ -131,6 +131,32 @@ Copilot should not:
 - Suggest unbounded LLM usage  
 - Suggest premium models unnecessarily  
 
+### 4.8 Git Workflow Requirements
+Copilot must enforce the following for all changes:
+
+**Before starting work:**
+- Pull the latest changes from `main` branch
+- Verify working directory is clean
+
+**Branch naming convention:**
+- Workflow changes: `workflow/<workflow-name>/<description>` (e.g., `workflow/invoice-parser/add-validation`)
+- Agent/skill changes: `agent/<agent-name>/<description>` (e.g., `agent/developer/add-git-workflow`)
+- Platform changes: `platform/<component>/<description>` (e.g., `platform/docker/update-nodejs`)
+- Documentation: `docs/<description>` (e.g., `docs/update-readme`)
+
+**Workflow:**
+1. Pull latest from `main`: `git pull origin main`
+2. Create feature branch with proper format: `git checkout -b <branch-name>`
+3. Make changes and commit with clear messages
+4. Push to feature branch: `git push origin <branch-name>`
+5. Do NOT merge directly to `main` — create a pull request for review
+
+**Pull Request Requirements:**
+- All tests must pass
+- All documentation must be updated
+- CI/CD checks must pass
+- Requires code review before merging to `main`
+
 ---
 
 ## 5. Agents
@@ -168,11 +194,15 @@ Starts with low-cost model, escalates when needed.
 - `write-readme`  
 
 **Behaviour:**  
+- Pull latest from `main` before starting work
+- Create feature branch with format: `docs/<description>` or `agent/<agent-name>/<description>`
 - Produces workflow plans  
 - Defines inputs, outputs, schemas  
 - Writes documentation  
 - Designs changes to existing workflows  
+- Push changes to feature branch (do NOT push to main)
 - Hands off to Developer Agent  
+- Document any git operations taken
 
 ---
 
@@ -190,12 +220,18 @@ Mid-tier model.
 - `update-platform`  
 
 **Behaviour:**  
+- Pull latest from `main` before starting work
+- Create feature branch with proper format (`workflow/<name>/<desc>`, `platform/<component>/<desc>`, etc.)
 - Implements workflow.json  
 - Writes tests  
 - Writes documentation  
 - Updates schemas  
 - Maintains n8n stack + shared libs  
 - Ensures CI/CD compatibility  
+- Runs tests and validates all changes locally
+- Push changes to feature branch (do NOT push to main)
+- Report branch name and changes for pull request creation
+- Document all git operations performed
 
 ---
 
@@ -354,7 +390,47 @@ Copilot must:
 - maintain consistency with existing code and patterns
 
 ============================================================
-## 5. Output
+## 5. Git Workflow Requirements
+============================================================
+Copilot must enforce strict git workflow for all changes:
+
+**Before starting any work:**
+- Pull latest changes from `main` branch: `git pull origin main`
+- Verify working directory is clean: `git status`
+
+**Branch naming convention:**
+- Workflow changes: `workflow/<workflow-name>/<description>`  
+  Example: `workflow/invoice-parser/add-validation`
+- Agent/skill changes: `agent/<agent-name>/<description>`  
+  Example: `agent/developer/enforce-git-workflow`
+- Platform changes: `platform/<component>/<description>`  
+  Example: `platform/docker/update-nodejs`
+- Documentation: `docs/<description>`  
+  Example: `docs/update-agents-guide`
+
+**Git workflow for all tasks:**
+1. Pull latest: `git pull origin main`
+2. Create feature branch: `git checkout -b <branch-name>`
+3. Make changes and commit with clear messages
+4. Run all tests and validation locally
+5. Push to feature branch: `git push origin <branch-name>`
+6. **Do NOT merge to main directly** — pull requests must be created for review
+7. Report the branch name and summary of changes for PR creation
+
+**Pull Request Requirements:**
+- All tests must pass
+- All documentation must be updated
+- CI/CD checks must pass
+- Code review required before merging to `main`
+
+**Documentation of git operations:**
+- Report all git commands executed
+- Report branch name created
+- Report commit messages
+- Report files changed
+
+============================================================
+## 6. Output
 ============================================================
 Generate:
 - COPILOT_INSTRUCTIONS.md
